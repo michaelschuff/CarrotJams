@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 
 import utilities
 
+# To run:
+# clear; clear; /usr/local/bin/python3.12 /Users/michaelschuff/Desktop/CarrotJams/main.py
+
 load_dotenv()
 token = os.getenv('discordToken')
 
