@@ -323,14 +323,6 @@ async def print_info(ctx):
     await ctx.send(f"Queue: {queue}")
 
 
-@bot.command(name='leave', guild=GUILD_ID)
-async def leave(ctx):
-    voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    if voice and voice.is_connected():
-        check_session(ctx).q.clear_queue()
-        await voice.disconnect()
-    else:
-        await ctx.send("Bot not connect, so it can't leave.")
 
 
 @bot.command(name='pause', guild=GUILD_ID)
@@ -351,13 +343,13 @@ async def resume(ctx):
         await ctx.send("Música já ta pausada, mangolao")
 
 
-@bot.command(name='stop', guild=GUILD_ID)
+@bot.command(name='stop', aliases=['stop', 'leave'], guild=GUILD_ID)
 async def stop(ctx):
     session = check_session(ctx)
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
     if voice and voice.is_playing():
-        voice.stop()
         session.q.clear_queue()
+        voice.disconnect()
     else:
         await ctx.send("Não tem nada tocando ô abobado.")
 
