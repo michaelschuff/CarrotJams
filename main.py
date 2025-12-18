@@ -21,6 +21,30 @@ FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn -ar 48000 -ac 2 -b:a 96k -compression_level 5 -application audio"
 }
+# FFMPEG_PATH = "/opt/local/bin/ffmpeg"
+FFMPEG_PATH = "/usr/local/bin/ffmpeg"
+
+FFMPEG_BEFORE_OPTIONS = (
+    "-reconnect 1 "
+    "-reconnect_streamed 1 "
+    "-reconnect_delay_max 5"
+)
+
+
+# ---------- yt-dlp options (lower bitrate, explicit node path, SABR-safe clients) ----------
+YDL_OPTS = {
+    # prefer Opus <= 128kbps, fallback to other opus / best audio
+    "format": "ba[acodec=opus][abr<=128]/ba[acodec=opus]/bestaudio/best",
+    "noplaylist": False,
+    "quiet": True,
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["web", "default"]
+        }
+    },
+    # explicitly point to your node runtime to avoid yt-dlp JS detection issues
+    "exe": {"js": "/opt/homebrew/bin/node"}
+}
 
 sessions = []
 GUILD_ID = discord.Object(id=882313681369718806)
@@ -49,7 +73,7 @@ def prepare_continue_queue(ctx):
 
 async def continue_queue(ctx):
     session = check_session(ctx)
-    if not session.q.theres_next():
+    if not session.q.has_next():
         await ctx.send("Acabou a queue, brother.")
         return
 
@@ -84,23 +108,6 @@ async def sync(ctx: commands.Context):
     print("done syncing.")
 
 
-# ---------- yt-dlp options (lower bitrate, explicit node path, SABR-safe clients) ----------
-YDL_OPTS = {
-    # prefer Opus <= 128kbps, fallback to other opus / best audio
-    "format": "ba[acodec=opus][abr<=128]/ba[acodec=opus]/bestaudio/best",
-    "noplaylist": True,
-    "quiet": True,
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["web", "default", "web_safari"]
-        }
-    },
-    # explicitly point to your node runtime to avoid yt-dlp JS detection issues
-    "exe": {"js": "/opt/homebrew/bin/node"}
-}
-# ----------------------------------------------------------------------------------------
-
-
 def _extract_info_sync(query, is_url):
     """Run inside a thread: create YoutubeDL and extract info synchronously."""
     with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
@@ -110,17 +117,41 @@ def _extract_info_sync(query, is_url):
             return ydl.extract_info(f"ytsearch:{query}", download=False)['entries'][0]
 
 
+def _extract_audio_url_from_info(info) -> str | None:
+    """
+    Given a fully-extracted yt-dlp video info dict,
+    return a direct audio-only stream URL.
+    """
+    formats = info.get("formats", []) or []
+    audio_formats = [
+        f for f in formats
+        if f.get("acodec")
+        and f.get("acodec") != "none"
+        and (not f.get("vcodec") or f.get("vcodec") == "none")
+        and f.get("url")
+    ]
+
+    if not audio_formats:
+        return None
+
+    # Prefer highest abr (already capped by YDL_OPTS)
+    best = max(audio_formats, key=lambda f: f.get("abr") or 0)
+    return best["url"]
+
 def _is_probable_url(text: str) -> bool:
     """Simple heuristic to detect URLs (supports youtube links & http(s))."""
     text_lower = text.lower()
     return text_lower.startswith("http://") or text_lower.startswith("https://") or "youtube.com" in text_lower or "youtu.be" in text_lower
 
-
+async def fetch_video_info(loop, ctx, arg, is_url):
+    try:
+        return await loop.run_in_executor(None, _extract_info_sync, arg, is_url)
+    except Exception as e:
+        await ctx.send("Erro ao extrair informações do YouTube.")
+        print("yt-dlp extract error:", e)
+        return None
 @bot.command(name='play', guild=GUILD_ID)
 async def play(ctx, *, arg):
-    """
-    Non-blocking yt-dlp extraction + lower-bitrate audio selection + safe voice flow.
-    """
     try:
         voice_channel = ctx.author.voice.channel
     except AttributeError:
@@ -128,47 +159,55 @@ async def play(ctx, *, arg):
         return
 
     session = check_session(ctx)
-
     loop = asyncio.get_event_loop()
     is_url = _is_probable_url(arg)
-
-    # Offload extraction to a thread so the event loop isn't blocked.
-    try:
-        info = await loop.run_in_executor(None, _extract_info_sync, arg, is_url)
-    except Exception as e:
-        await ctx.send("Erro ao extrair informações do YouTube.")
-        print("yt-dlp extract error:", e)
+    
+    # Initial extraction (may be playlist OR single video)
+    info = await fetch_video_info(loop, ctx, arg, is_url)
+    if not info:
         return
+    
+    # print("info:",info)
+    tracks_added = 0
+    thumb = None
+    title = "Unknown title"
+    # ---------------- PLAYLIST HANDLING ----------------
+    if info.get("_type") == "playlist":
+        entries = info.get("entries", [])
 
-    # Choose the best audio-only format (prefer audio-only with abr value)
-    formats = info.get("formats", []) or []
-    audio_formats = [
-        f for f in formats
-        if f.get("acodec") and f.get("acodec") != "none" and (not f.get("vcodec") or f.get("vcodec") == "none")
-    ]
+        for entry in entries:
+            if not entry or not entry.get("original_url"):
+                continue
+            info =  await fetch_video_info(loop, ctx, entry.get("original_url"), True)
+            audio_url = _extract_audio_url_from_info(info)
+            if not audio_url:
+                await ctx.send("Erro: Não consegui pegar audio do YouTube.")
+                return
 
-    if not audio_formats:
-        # Sometimes the top-level info has direct url (rare). Try fallback:
-        url_direct = info.get("url")
-        if url_direct:
-            url = url_direct
-        else:
+            title = info.get("title", "Unknown title")
+            thumb = None
+            if info.get("thumbnails"):
+                thumb = info["thumbnails"][0].get("url")
+
+            session.q.enqueue(title, audio_url, thumb)
+            tracks_added += 1
+
+    # ---------------- SINGLE VIDEO ----------------
+    else:
+        audio_url = _extract_audio_url_from_info(info)
+        if not audio_url:
             await ctx.send("Erro: Não consegui pegar audio do YouTube.")
             return
-    else:
-        # pick the format with highest abr (but since we limited abr<=128 in selector, it will be <=128)
-        best = max(audio_formats, key=lambda f: f.get("abr") or 0)
-        url = best.get("url")
 
-    # Safely get thumbnail and title
-    thumb = None
-    if info.get("thumbnails"):
-        thumb = info["thumbnails"][0].get("url")
-    title = info.get("title", "Unknown title")
+        title = info.get("title", "Unknown title")
+        thumb = None
+        if info.get("thumbnails"):
+            thumb = info["thumbnails"][0].get("url")
 
-    session.q.enqueue(title, url, thumb)
+        session.q.enqueue(title, audio_url, thumb)
+        tracks_added = 1
 
-    # Voice connect flow: await connect and reuse ctx.voice_client if present
+    # ---------------- VOICE CONNECTION ----------------
     if not ctx.voice_client:
         try:
             vc = await voice_channel.connect()
@@ -179,29 +218,34 @@ async def play(ctx, *, arg):
     else:
         vc = ctx.voice_client
 
-    if vc.is_playing():
-        await ctx.send(thumb or "")
-        await ctx.send(f"Adicionado à queue: {title}")
-        return
+    # ---------------- FEEDBACK ----------------
+    if tracks_added > 1:
+        await ctx.send(f"🎶 Adicionadas **{tracks_added} músicas** da playlist.")
     else:
-        await ctx.send(thumb or "")
+        if thumb:
+            await ctx.send(thumb)
         await ctx.send(f"Tocando agora: {title}")
-        session.q.set_last_as_current()
 
-        try:
-            source = await discord.FFmpegOpusAudio.from_probe(url, **FFMPEG_OPTIONS)
-        except Exception as e:
-            await ctx.send("Erro ao preparar audio (probe).")
-            print("from_probe error:", e)
-            return
 
-        vc.play(source, after=lambda ee: prepare_continue_queue(ctx))
+    # ---------------- START PLAYBACK IF IDLE ----------------
+    if not vc.is_playing():
+        session.q.set_first_as_current()
+
+        source = discord.FFmpegOpusAudio(
+            session.q.current_music.url,
+            executable=FFMPEG_PATH,
+            before_options=FFMPEG_BEFORE_OPTIONS,
+            options=FFMPEG_OPTIONS
+        )
+
+        vc.play(source, after=lambda e: prepare_continue_queue(ctx))
+    # print(session.q.queue)
 
 
 @bot.command(name='next', aliases=['skip'], guild=GUILD_ID)
-async def skip(ctx):
+async def next(ctx):
     session = check_session(ctx)
-    if not session.q.theres_next():
+    if not session.q.has_next():
         await ctx.send("Não tem porra nenhuma na fila, mangolão")
         return
 
@@ -218,6 +262,7 @@ async def skip(ctx):
             print("from_probe error:", e)
             return
         voice.play(source, after=lambda e: prepare_continue_queue(ctx))
+    # print(session.q.queue)
 
 
 @bot.command(name='print', guild=GUILD_ID)
