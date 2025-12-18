@@ -2,8 +2,11 @@ import asyncio
 import os
 import discord
 import yt_dlp
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
 from discord.ext import commands
 from dotenv import load_dotenv
+import re
 
 import utilities
 
@@ -12,9 +15,13 @@ import utilities
 
 load_dotenv()
 token = os.getenv('discordToken')
+spotifyClientID = os.getenv('spotifyClientID')
+spotifyClientSecret = os.getenv('spotifyClientSecret')
 
 intents = discord.Intents(messages=True, guilds=True, members=True, message_content=True, presences=True, voice_states=True)
 bot = commands.Bot(command_prefix=']', intents=intents)
+spotify = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=spotifyClientID,
+                                                           client_secret=spotifyClientSecret))
 
 # Optimized FFmpeg options: reconnect + explicit audio parameters (48kHz, stereo, 96kbps Opus)
 FFMPEG_OPTIONS = {
@@ -141,7 +148,10 @@ def _extract_audio_url_from_info(info) -> str | None:
 def _is_probable_url(text: str) -> bool:
     """Simple heuristic to detect URLs (supports youtube links & http(s))."""
     text_lower = text.lower()
-    return text_lower.startswith("http://") or text_lower.startswith("https://") or "youtube.com" in text_lower or "youtu.be" in text_lower
+    return text_lower.startswith("http://") or text_lower.startswith("https://") or "youtube.com" in text_lower or "youtu.be" in text_lower or "spotify.com" in text_lower
+
+def is_spotify_link(text: str) -> bool:
+    return "spotify.com" in text
 
 async def fetch_video_info(loop, ctx, arg, is_url):
     try:
@@ -150,19 +160,8 @@ async def fetch_video_info(loop, ctx, arg, is_url):
         await ctx.send("Erro ao extrair informações do YouTube.")
         print("yt-dlp extract error:", e)
         return None
-@bot.command(name='play', guild=GUILD_ID)
-async def play(ctx, *, arg):
-    try:
-        voice_channel = ctx.author.voice.channel
-    except AttributeError:
-        await ctx.send("Tu não tá conectado num canal de voz, burro")
-        return
-
-    session = check_session(ctx)
-    loop = asyncio.get_event_loop()
-    is_url = _is_probable_url(arg)
     
-    # Initial extraction (may be playlist OR single video)
+async def handle_youtube(ctx, arg, session, loop, is_url, voice_channel, spotify_playlist_search):
     info = await fetch_video_info(loop, ctx, arg, is_url)
     if not info:
         return
@@ -218,13 +217,6 @@ async def play(ctx, *, arg):
     else:
         vc = ctx.voice_client
 
-    # ---------------- FEEDBACK ----------------
-    if tracks_added > 1:
-        await ctx.send(f"🎶 Adicionadas **{tracks_added} músicas** da playlist.")
-    else:
-        if thumb:
-            await ctx.send(thumb)
-        await ctx.send(f"Tocando agora: {title}")
 
 
     # ---------------- START PLAYBACK IF IDLE ----------------
@@ -240,6 +232,63 @@ async def play(ctx, *, arg):
 
         vc.play(source, after=lambda e: prepare_continue_queue(ctx))
     # print(session.q.queue)
+
+    if tracks_added == 1 and not spotify_playlist_search:
+        if thumb:
+            await ctx.send(thumb)
+        await ctx.send(f"Tocando agora: {title}")
+    return tracks_added
+
+async def handle_spotify(ctx, arg, session, loop, is_url, voice_channel):
+    tracks_added = 0
+    # ---------------- PLAYLIST HANDLING ----------------
+    if "playlist" in arg:
+        results = spotify.playlist_items(arg)
+        print(results)
+        for item in results["items"]:
+            track_info = item["track"]
+            query = f"{track_info['name']} {', '.join(map(lambda a: a["name"], track_info['artists']))}"
+            tracks_added += await handle_youtube(ctx, query, session, loop, False, voice_channel, True)
+    elif "album" in arg:
+        results = spotify.album_tracks(arg)
+        print(results)
+        for track_info in results["items"]:
+            query = f"{track_info['name']} {', '.join(map(lambda a: a["name"], track_info['artists']))}"
+            tracks_added += await handle_youtube(ctx, query, session, loop, False, voice_channel, True)
+    else:
+        track_info = spotify.track(arg)
+        print(track_info)
+        query = f"{track_info['name']} {', '.join(map(lambda a: a["name"], track_info['artists']))}"
+        tracks_added += await handle_youtube(ctx, query, session, loop, False, voice_channel, False)
+        
+    return tracks_added
+
+@bot.command(name='play', guild=GUILD_ID)
+async def play(ctx, *, arg):
+    try:
+        voice_channel = ctx.author.voice.channel
+    except AttributeError:
+        await ctx.send("Tu não tá conectado num canal de voz, burro")
+        return
+
+    session = check_session(ctx)
+    loop = asyncio.get_event_loop()
+    is_url = _is_probable_url(arg)
+    is_spotify = is_spotify_link(arg)
+    tracks_added = 0
+    # ---------------- SPOTIFY HANDLING ----------------
+    if is_spotify:
+       tracks_added += await handle_spotify(ctx, arg, session, loop, is_url, voice_channel)
+
+    # ---------------- YOUTUBE HANDLING ----------------
+    else:
+        tracks_added += await handle_youtube(ctx, arg, session, loop, is_url, voice_channel, False)
+    # Initial extraction (may be playlist OR single video)
+
+    # ---------------- FEEDBACK ----------------
+    if tracks_added > 1:
+        await ctx.send(f"🎶 Adicionadas **{tracks_added} músicas** da playlist.")
+    
 
 
 @bot.command(name='next', aliases=['skip'], guild=GUILD_ID)
