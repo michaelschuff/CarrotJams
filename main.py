@@ -28,8 +28,8 @@ FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn -ar 48000 -ac 2 -b:a 96k -compression_level 5 -application audio"
 }
-# FFMPEG_PATH = "/opt/local/bin/ffmpeg"
-FFMPEG_PATH = "/usr/local/bin/ffmpeg"
+FFMPEG_PATH = "/opt/local/bin/ffmpeg"
+# FFMPEG_PATH = "/usr/local/bin/ffmpeg"
 
 FFMPEG_BEFORE_OPTIONS = (
     "-reconnect 1 "
@@ -343,13 +343,13 @@ async def resume(ctx):
         await ctx.send("Música já ta pausada, mangolao")
 
 
-@bot.command(name='stop', aliases=['stop', 'leave'], guild=GUILD_ID)
+@bot.command(name='stop', aliases=['clear', 'leave'], guild=GUILD_ID)
 async def stop(ctx):
     session = check_session(ctx)
     voice = discord.utils.get(bot.voice_clients, guild=ctx.guild)
     if voice and voice.is_playing():
         session.q.clear_queue()
-        voice.disconnect()
+        await voice.disconnect()
     else:
         await ctx.send("Não tem nada tocando ô abobado.")
 
