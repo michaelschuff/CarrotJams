@@ -410,8 +410,11 @@ class Music(commands.Cog):
             await self.replace_player_message(ctx)
         else:
                await self.edit_player_message(ctx)
-
+    
     async def action_skip(self, ctx: commands.Context, from_button: bool):
+        session = check_session(ctx)
+        if session.is_paused:
+            session.q.next()
         if ctx.voice_client and ctx.voice_client.is_playing():
             ctx.voice_client.stop()
             if not from_button:
