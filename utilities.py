@@ -1,14 +1,16 @@
 from collections import namedtuple
-
+import random
 
 class Queue:
     def __init__(self):
-        self.music = namedtuple('music', ('title', 'url', 'thumb'))
+        self.music = namedtuple('music', ('title', 'url', 'thumb', 'link'))
         self.queue = []
         self.current_music = None
         self.curr_index = -1
-    def enqueue(self, title, url, thumb):
-        self.queue.append(self.music(title, url, thumb))
+        self.loop = False
+
+    def enqueue(self, title, url, thumb, link):
+        self.queue.append(self.music(title, url, thumb, link))
         if self.curr_index == -1:
             self.curr_index = 0
             self.current_music = self.queue[self.curr_index]
@@ -26,14 +28,22 @@ class Queue:
             return False
 
         
-        self.curr_index += 1
+        
+        if self.loop:
+            self.curr_index = (self.curr_index + 1) % len(self.queue)
+        else:
+            del self.queue[self.curr_index]
+
         self.current_music = self.queue[self.curr_index]
         return True
     
     def has_next(self):
         if self.curr_index == -1:
             return len(self.queue) > 0
-    
+        
+        if self.loop:
+            return len(self.queue) > 0
+
         if self.curr_index < len(self.queue)-1:
             return True
 
@@ -43,6 +53,22 @@ class Queue:
         self.queue = []
         self.curr_index = -1
         self.current_music = None
+        self.loop = False
+
+    def shuffle(self):
+        if self.queue != [] or self.curr_index != -1 or self.current_music != None:
+            print("Cannot do ordinary shuffle while playing music")
+        random.shuffle(self.queue)
+
+    def shuffle_while_playing(self):
+        if self.queue == [] and self.curr_index == -1 and self.current_music == None:
+            shuffle()
+            return
+        
+        del queue[self.curr_index]
+        random.shuffle(queue)
+        self.queue.insert(self.current_music)
+        self.curr_index = 0
 
 
 class Session:
@@ -51,3 +77,4 @@ class Session:
         self.guild = guild
         self.channel = channel
         self.q = Queue()
+        self.is_paused = False
