@@ -260,11 +260,8 @@ class Music(commands.Cog):
         # await ctx.send(f"Tocando agora: {session.q.current_music.title}")
         await self.replace_player_message(ctx)
 
-
-    async def edit_player_message(self, ctx: commands.Context):
-        session = self.check_session(ctx)
-
-        formatted_queue = ""
+    def get_embed_view(self, ctx: commands.Context, session):
+    	formatted_queue = ""
         if len(session.q) > 0:
             for m in range(min(len(session.q), 10)):
                 abb_title = session.q[m][0]
@@ -331,6 +328,13 @@ class Music(commands.Cog):
         view.add_item(next_track)
         view.add_item(clear_queue)
         view.add_item(leave)
+        return embed, view
+
+
+    async def edit_player_message(self, ctx: commands.Context):
+        session = self.check_session(ctx)
+
+        embed, view = self.get_embed_view(ctx, session)
 
         if session.player_message_id and session.player_channel_id:
             try:
@@ -359,73 +363,7 @@ class Music(commands.Cog):
 
 
         
-        formatted_queue = ""
-        if len(session.q) > 0:
-            for m in range(min(len(session.q), 10)):
-                abb_title = session.q[m][0]
-                if len(abb_title) > EMBED_QUEUE_MAX_TITLE_LENGTH:
-                    abb_title = abb_title[:EMBED_QUEUE_MAX_TITLE_LENGTH-3:]
-                    abb_title += "..."
-
-                index = str(m) + "."
-                if session.q.curr_index == m:
-                    if session.is_paused:
-                        index = "⏸️"
-                    elif session.stopped:
-                        index = "⏹️"
-                    else:
-                        index = "▶️"
-
-                formatted_queue += "\n" + index + " [" + abb_title + "](" + session.q[m][3] + ")"
-
-
-        embed_title = "Now Playing"
-        if session.is_paused:
-            embed_title = "Paused"
-        if session.stopped:
-            embed_title = "Stopped"
-        if not session.q.current_music:
-            embed_title = "Waiting"
-
-        description_title = "Nenhuma faixa selecionada"
-        if session.q.current_music:
-            description_title = session.q.current_music.title
-
-        # Send new embed
-        embed = discord.Embed(
-            title=embed_title,
-            description=description_title,
-            color=discord.Color.orange()
-        )
-
-        if session.q.current_music:
-            embed.set_thumbnail(url=session.q.current_music.thumb)
-        else:
-            embed.set_thumbnail(url="https://t4.ftcdn.net/jpg/02/04/10/95/360_F_204109503_OxuR11rq9CLkEFkjWphOBABSDTBTNJrc.jpg")
-
-        embed.add_field(name="Queue:",value=formatted_queue)
-
-        # view = PlayerView(self, ctx)
-
-
-        view = discord.ui.View()
-        prev_track = CarrotButton.PrevTrackButton(self, ctx, "⏮️", discord.ButtonStyle.secondary, "prev_track")
-        pp_track = None
-        if session.is_paused or session.stopped:
-            pp_track = CarrotButton.PauseResumeTrackButton(self, ctx, "▶️", discord.ButtonStyle.success, "pp_track")
-        else:
-            pp_track = CarrotButton.PauseResumeTrackButton(self, ctx, "⏸️", discord.ButtonStyle.primary, "pp_track")
-
-        next_track = CarrotButton.NextTrackButton(self, ctx, "⏭️", discord.ButtonStyle.secondary, "next_track")
-        clear_queue = CarrotButton.ClearQueueButton(self, ctx, "🚫", discord.ButtonStyle.secondary, "clear_queue")
-        leave = CarrotButton.LeaveButton(self, ctx, "☠️", discord.ButtonStyle.secondary, "leave")
-
-        # Add buttons to the view
-        view.add_item(prev_track)
-        view.add_item(pp_track)
-        view.add_item(next_track)
-        view.add_item(clear_queue)
-        view.add_item(leave)
+        embed, view = self.get_embed_view(ctx, session)
         msg = await ctx.send(embed=embed, view=view)
 
         # Store new message info
