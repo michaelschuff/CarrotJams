@@ -31,8 +31,8 @@ class Queue:
         
         if self.loop:
             self.curr_index = (self.curr_index + 1) % len(self.queue)
-        else:
-            del self.queue[self.curr_index]
+        # else:
+        #     del self.queue[self.curr_index]
 
         self.current_music = self.queue[self.curr_index]
         return True
@@ -48,6 +48,31 @@ class Queue:
             return True
 
         return False
+
+    def has_previous(self):
+        if self.curr_index == -1:
+            return False
+        
+        if self.loop:
+            return True
+
+        return self.curr_index > 0
+
+    def previous(self):
+        if self.curr_index == -1:
+            return False
+
+        if self.loop:
+            self.curr_index = self.currindex - 1
+            if self.curr_index < 0:
+                self.curr_index += len(queue)
+            return True
+        if self.curr_index > 0:
+            self.curr_index = self.currindex - 1
+            return True
+
+        return False
+
 
     def clear_queue(self):
         self.queue = []
@@ -70,6 +95,21 @@ class Queue:
         self.queue.insert(self.current_music)
         self.curr_index = 0
 
+    def __len__(self):
+        return len(self.queue)
+
+    def __getitem__(self, key):
+        """Called when accessing an item: my_object[key]"""
+        return self.queue[key]
+
+    def __setitem__(self, key, value):
+        """Called when setting an item: my_object[key] = value"""
+        self.queue[key] = value
+
+    def __delitem__(self, key):
+        """Called when deleting an item: del my_object[key]"""
+        del self.queue[key]
+
 
 class Session:
     def __init__(self, guild, channel, id=0):
@@ -77,4 +117,9 @@ class Session:
         self.guild = guild
         self.channel = channel
         self.q = Queue()
-        self.is_paused = False
+        self.is_paused = True
+        self.seek_prev = False
+        self.stopped = False
+
+        self.player_message_id: int | None = None
+        self.player_channel_id: int | None = None
