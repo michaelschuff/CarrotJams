@@ -269,7 +269,7 @@ class Music(commands.Cog):
                     abb_title = abb_title[:EMBED_QUEUE_MAX_TITLE_LENGTH-3:]
                     abb_title += "..."
 
-                index = str(m) + "."
+                index = str(m + 1) + "."
                 if session.q.curr_index == m:
                     if session.is_paused:
                         index = "⏸️"
