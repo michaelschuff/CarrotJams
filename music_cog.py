@@ -637,8 +637,8 @@ class Music(commands.Cog):
 
     @commands.command(
         aliases=["show_player", "show", "player", ],
-        help="Print info about about the session",
-        brief="Print info",
+        help="Bring up info about the current session.",
+        brief="Bring up info about the current session.",
         usage=""
     )
     async def print(self, ctx):
