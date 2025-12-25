@@ -261,7 +261,7 @@ class Music(commands.Cog):
         await self.replace_player_message(ctx)
 
     def get_embed_view(self, ctx: commands.Context, session):
-    	formatted_queue = ""
+        formatted_queue = ""
         if len(session.q) > 0:
             for m in range(min(len(session.q), 10)):
                 abb_title = session.q[m][0]
