@@ -30,9 +30,9 @@ YDL_OPTS = { # prefer Opus <= 128kbps, fallback to other opus / best audio
 }
 
 # old: 
-# FFMPEG_PATH = "/opt/local/bin/ffmpeg" 
+FFMPEG_PATH = "/opt/local/bin/ffmpeg" 
 # new: 
-FFMPEG_PATH = "/usr/local/bin/ffmpeg"
+# FFMPEG_PATH = "/usr/local/bin/ffmpeg"
 
 
 
