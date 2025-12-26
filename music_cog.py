@@ -210,6 +210,11 @@ class Music(commands.Cog):
 
 
     def prepare_continue_queue(self, ctx): 
+        session = self.check_session(ctx)
+        if session.q.hasnext():
+            session.q.next()
+        else:
+            session.end_of_queue = True
         fut = asyncio.run_coroutine_threadsafe(self.continue_queue(ctx), self.bot.loop) 
         try: 
             fut.result() 
@@ -226,7 +231,7 @@ class Music(commands.Cog):
             return 
 
         if session.q.curr_index == -1:
-            session.next()
+            session.q.next()
 
 
 
