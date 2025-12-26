@@ -9,6 +9,11 @@ from discord.ui import View, Button, Select
 import utilities
 import CarrotButton
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+FFMPEG_PATH = os.getenv("FFMPEG_PATH")
 
 # Optimized FFmpeg options: reconnect + explicit audio parameters (48kHz, stereo, 96kbps Opus) 
 FFMPEG_OPTIONS = { 
@@ -28,11 +33,6 @@ YDL_OPTS = { # prefer Opus <= 128kbps, fallback to other opus / best audio
     }, # explicitly point to your node runtime to avoid yt-dlp JS detection issues 
     "exe": {"js": "/opt/homebrew/bin/node"}
 }
-
-# old: 
-FFMPEG_PATH = "/opt/local/bin/ffmpeg" 
-# new: 
-# FFMPEG_PATH = "/usr/local/bin/ffmpeg"
 
 
 

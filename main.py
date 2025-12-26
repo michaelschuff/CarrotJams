@@ -1,8 +1,9 @@
 import asyncio
-import os
 import discord
 from discord.ext import commands
+import os
 from dotenv import load_dotenv
+
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
