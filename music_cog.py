@@ -231,7 +231,7 @@ class Music(commands.Cog):
             session.seek_prev = False
 
 
-        voice = discord.utils.get(bot.voice_clients, guild=session.guild) 
+        voice = discord.utils.get(self.bot.voice_clients, guild=session.guild) 
 
         if not voice: 
             # If voice client not found, connect 
