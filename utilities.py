@@ -31,6 +31,8 @@ class Queue:
         
         if self.loop:
             self.curr_index = (self.curr_index + 1) % len(self.queue)
+        else:
+            self.curr_index += 1
         # else:
         #     del self.queue[self.curr_index]
 
@@ -54,7 +56,7 @@ class Queue:
             return False
         
         if self.loop:
-            return True
+            return self.curr_index >= 0
 
         return self.curr_index > 0
 
@@ -63,12 +65,15 @@ class Queue:
             return False
 
         if self.loop:
-            self.curr_index = self.currindex - 1
+            self.curr_index = self.curr_index - 1
             if self.curr_index < 0:
                 self.curr_index += len(queue)
+            self.current_music = self.queue[self.curr_index]
             return True
-        if self.curr_index > 0:
-            self.curr_index = self.currindex - 1
+
+        elif self.curr_index > 0:
+            self.curr_index = self.curr_index - 1
+            self.current_music = self.queue[self.curr_index]
             return True
 
         return False
@@ -118,8 +123,8 @@ class Session:
         self.channel = channel
         self.q = Queue()
         self.is_paused = True
-        self.seek_prev = False
         self.stopped = False
+        self.end_of_queue = True
 
         self.player_message_id: int | None = None
         self.player_channel_id: int | None = None

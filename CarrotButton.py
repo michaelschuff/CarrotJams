@@ -36,7 +36,7 @@ class PauseResumeTrackButton(discord.ui.Button):
 
         if vc.is_playing():
             await self.cog.action_pause(self.ctx, True)
-        elif vc.is_paused():
+        else:
             await self.cog.action_resume(self.ctx, True)
 
 class ClearQueueButton(discord.ui.Button):

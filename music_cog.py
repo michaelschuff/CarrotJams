@@ -30,9 +30,9 @@ YDL_OPTS = { # prefer Opus <= 128kbps, fallback to other opus / best audio
 }
 
 # old: 
-FFMPEG_PATH = "/opt/local/bin/ffmpeg" 
+# FFMPEG_PATH = "/opt/local/bin/ffmpeg" 
 # new: 
-# FFMPEG_PATH = "/usr/local/bin/ffmpeg"
+FFMPEG_PATH = "/usr/local/bin/ffmpeg"
 
 
 
@@ -221,15 +221,17 @@ class Music(commands.Cog):
         if session.is_paused: 
             return 
 
-        if not session.q.has_next(): 
+        if not session.q.loop and session.end_of_queue:
             await ctx.send("Acabou a queue, brother.") 
             return 
 
-        if not session.seek_prev:
-            session.q.next() 
-        else:
-            session.seek_prev = False
+        if session.q.curr_index == -1:
+            session.next()
 
+
+
+        if not session.q.loop and session.q.curr_index == len(session.q)-1:
+            session.end_of_queue = True
 
         voice = discord.utils.get(self.bot.voice_clients, guild=session.guild) 
 
@@ -238,7 +240,6 @@ class Music(commands.Cog):
             vc = await session.channel.connect()
         else: 
             vc = voice 
-
 
         try: 
             source = discord.FFmpegOpusAudio( 
@@ -255,10 +256,7 @@ class Music(commands.Cog):
         if vc.is_playing(): 
             vc.stop() 
 
-        vc.play(source, after=lambda e: self.prepare_continue_queue(ctx)) 
-        # await ctx.send(session.q.current_music.thumb) 
-        # await ctx.send(f"Tocando agora: {session.q.current_music.title}")
-        await self.replace_player_message(ctx)
+        vc.play(source, after=lambda e: self.prepare_continue_queue(ctx))
 
     def get_embed_view(self, ctx: commands.Context, session):
         formatted_queue = ""
@@ -405,43 +403,46 @@ class Music(commands.Cog):
                 ctx, query, session, loop, is_url, voice_channel, False
             )
 
-        # if tracks_added >= 1:
+        if tracks_added >= 1:
+            session.end_of_queue = False
         if not from_button:
             await self.replace_player_message(ctx)
         else:
-               await self.edit_player_message(ctx)
+            await self.edit_player_message(ctx)
     
     async def action_skip(self, ctx: commands.Context, from_button: bool):
         session = self.check_session(ctx)
-        if session.is_paused:
-            session.q.next()
-        if ctx.voice_client and ctx.voice_client.is_playing():
-            ctx.voice_client.stop()
-            if not from_button:
-                await self.replace_player_message(ctx)
+        if ctx.voice_client:
+            if session.q.has_next():
+                session.q.next()
+                ctx.voice_client.stop()
+                if not from_button:
+                    await self.replace_player_message(ctx)
+                else:
+                    await self.edit_player_message(ctx)
             else:
-                await self.edit_player_message(ctx)
+                await ctx.send("Acabou a queue, brother.")
         else:
-            await ctx.send("Não está tocando nada, brother.", ephemeral=True)
+            await ctx.send("Não estou conectado, brother.")
 
 
     async def action_previous(self, ctx: commands.Context, from_button: bool):
         session = self.check_session(ctx)
-        session.seek_prev = True
-
-        if session.q.curr_index == 0 and not session.q.loop:
-            await ctx.send("Não há faixa anterior, brother.", ephemeral=True)
-            return
-
-        if ctx.voice_client and ctx.voice_client.is_playing():
-            session.q.previous()
-            ctx.voice_client.stop()
-            if not from_button:
-                await self.replace_player_message(ctx)
+        if ctx.voice_client:
+            if session.q.has_previous():
+                session.q.previous()
+                session.end_of_queue = False
+                ctx.voice_client.stop()
+                if not from_button:
+                    await self.replace_player_message(ctx)
+                else:
+                    await self.edit_player_message(ctx)
             else:
-                await self.edit_player_message(ctx)
+                await ctx.send("Não há faixa anterior, brother.")
+            
+
         else:
-            await ctx.send("Não está tocando nada, brother.", ephemeral=True)
+            await ctx.send("Não estou conectado, brother.")
 
 
     async def action_pause(self, ctx: commands.Context, from_button: bool):
@@ -455,12 +456,11 @@ class Music(commands.Cog):
             else:
                 await self.edit_player_message(ctx)
         else:
-            await ctx.send("Não está tocando nada, brother.", ephemeral=True)
+            await ctx.send("Não está tocando nada, brother.")
 
 
     async def action_resume(self, ctx: commands.Context, from_button: bool):
         session = self.check_session(ctx)
-
         if ctx.voice_client and ctx.voice_client.is_paused():
             ctx.voice_client.resume()
             session.is_paused = False
@@ -469,8 +469,23 @@ class Music(commands.Cog):
                 await self.replace_player_message(ctx)
             else:
                 await self.edit_player_message(ctx)
+        elif not ctx.voice_client.is_playing() and not ctx.voice_client.is_paused():
+            source = discord.FFmpegOpusAudio( 
+                session.q.current_music.url, 
+                executable=FFMPEG_PATH, 
+                before_options=FFMPEG_BEFORE_OPTIONS, 
+                options=FFMPEG_OPTIONS 
+            )
+            session.is_paused = False
+
+            if not from_button:
+                await self.replace_player_message(ctx)
+            else:
+                await self.edit_player_message(ctx)
+            ctx.voice_client.play(source, after=lambda e: self.prepare_continue_queue(ctx)) 
+
         else:
-            await ctx.send("Não há nada para retomar, brother.", ephemeral=True)
+            await ctx.send("Não há nada para retomar, brother.")
 
     async def action_clear(self, ctx: commands.Context, from_button: bool):
         session = self.check_session(ctx)
@@ -488,7 +503,21 @@ class Music(commands.Cog):
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
         else:
-            await ctx.send("Não estou conectado, brother.", ephemeral=True)
+            await ctx.send("Não estou conectado, brother.")
+
+    async def action_loop(self, ctx: commands.Context, from_button: bool):
+        session.q.loop = True
+        if not from_button:
+            await self.replace_player_message(ctx)
+        else:
+            await self.edit_player_message(ctx)
+
+    async def action_unloop(self, ctx: commands.Context, from_button: bool):
+        session.q.loop = False
+        if not from_button:
+            await self.replace_player_message(ctx)
+        else:
+            await self.edit_player_message(ctx)
 
 
     # ---------- commands ----------
@@ -539,6 +568,24 @@ class Music(commands.Cog):
     async def resume(self, ctx):
         """Resume playback."""
         await self.action_resume(ctx, False)
+
+    @commands.command(
+        help="Loop the queue",
+        brief="Loop the queue",
+        usage=""
+    )
+    async def loop(self, ctx):
+        """Loop the queue."""
+        await self.action_loop(ctx, False)
+
+    @commands.command(
+        help="Unloop the queue",
+        brief="Unloop the queue",
+        usage=""
+    )
+    async def unloop(self, ctx):
+        """Unloop the queue."""
+        await self.action_unloop(ctx, False)
 
     @commands.command(
         help="Clear the queue.",
